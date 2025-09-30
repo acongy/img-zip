@@ -12,9 +12,9 @@ def get_pngquant_path():
     """根据系统返回 pngquant 可执行文件路径"""
     system = platform.system().lower()
     if system.startswith("win"):  # Windows
-        return os.path.join("pngquant-linux", "pngquant.exe")
+        return os.path.join("pngquant-win", "pngquant.exe")
     else:  # Linux
-        return os.path.join("pngquant-win", "pngquant")
+        return os.path.join("pngquant-linux", "pngquant")
 
 
 def compress_png_with_pngquant(input_bytes, quality_value=80):
