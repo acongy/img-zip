@@ -2,7 +2,19 @@ from flask import Flask, request, send_file, render_template, jsonify
 from PIL import Image
 import io
 import subprocess
+import platform
+import os
+
 app = Flask(__name__)
+
+
+def get_pngquant_path():
+    """根据系统返回 pngquant 可执行文件路径"""
+    system = platform.system().lower()
+    if system.startswith("win"):  # Windows
+        return os.path.join("pngquant-linux", "pngquant.exe")
+    else:  # Linux
+        return os.path.join("pngquant-win", "pngquant")
 
 
 def compress_png_with_pngquant(input_bytes, quality_value=80):
@@ -10,7 +22,7 @@ def compress_png_with_pngquant(input_bytes, quality_value=80):
     min_q = max(0, quality_value - 20)
     max_q = quality_value
     try:
-        pngquant_path = "./pngquant/pngquant.exe"
+        pngquant_path = get_pngquant_path()
         process = subprocess.Popen(
             [pngquant_path, f'--quality={min_q}-{max_q}', '--speed', '1', '-'],
             stdin=subprocess.PIPE,
@@ -21,6 +33,7 @@ def compress_png_with_pngquant(input_bytes, quality_value=80):
         if process.returncode == 0 and out:
             return io.BytesIO(out)
         else:
+            # 如果 pngquant 出错，返回原始数据
             return io.BytesIO(input_bytes)
     except Exception:
         return io.BytesIO(input_bytes)
@@ -76,7 +89,7 @@ def compress():
             compressed_file,
             mimetype=mime,
             as_attachment=True,
-            download_name=f"compressed_{file.filename}"
+            download_name=f"{file.filename}"
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
