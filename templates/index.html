@@ -342,7 +342,7 @@
             if (xhr.status === 200) {
                 const blob = xhr.response;
                 const compressedSize = blob.size || originalSize;
-                const finalPercent = Math.round((1 - compressedSize / originalSize) * 100);
+                const finalPercent = Math.round((1 - originalSize / compressedSize) * 100);
                 const gifNote = getGifNote(file.name);
 
                 status.textContent = '压缩完成';
