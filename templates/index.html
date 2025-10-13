@@ -75,6 +75,28 @@
             background: #f0f4ff;
         }
 
+        .upload-container.uploading {
+            cursor: not-allowed;
+            background: #f0f4ff;
+            pointer-events: none;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            z-index: 1;
+            border-radius: 12px;
+        }
+
+        .upload-container.uploading .overlay {
+            display: block;
+        }
+
         .upload-container p {
             margin: 0;
             color: #4a6cf7;
@@ -82,6 +104,19 @@
             position: relative;
             z-index: 2;
             text-align: center;
+        }
+
+        .uploading-text {
+            display: none;
+            color: #666;
+        }
+
+        .upload-container.uploading .uploading-text {
+            display: block;
+        }
+
+        .upload-container.uploading .upload-text {
+            display: none;
         }
 
         input[type=file] {
@@ -186,7 +221,9 @@
     <h1>单图片压缩</h1>
     <a href="index2.html" class="back-link">批量压缩</a>
     <label class="upload-container" id="uploadContainer" for="fileInput">
-        <p id="uploadText">点击或拖拽图片到这里</p>
+        <div class="overlay"></div>
+        <p id="uploadText" class="upload-text">点击或拖拽图片到这里</p>
+        <p id="uploadingText" class="uploading-text">处理中...</p>
         <input type="file" id="fileInput" accept="image/*">
     </label>
     <div id="sizeInfo"></div>
@@ -217,9 +254,11 @@
     const progressBar = document.getElementById('progressBar');
     const uploadContainer = document.getElementById('uploadContainer');
     const uploadText = document.getElementById('uploadText');
+    const uploadingText = document.getElementById('uploadingText');
 
     let originalSize = 0;
     let currentFile = null;
+    let isUploading = false;
 
     qualitySlider.addEventListener('input', () => {
         qualityValue.textContent = qualitySlider.value;
@@ -242,6 +281,7 @@
     }
 
     function handleFile(file) {
+        if (isUploading) return; // 防止上传中重复处理
         currentFile = file;
         originalSize = file.size;
         const gifNote = getGifNote(file.name);
@@ -259,6 +299,7 @@
     });
 
     uploadBtn.addEventListener('click', () => {
+        if (isUploading) return;
         if (!currentFile) {
             fileInput.click();
             return;
@@ -267,9 +308,12 @@
     });
 
     function uploadImage(file) {
+        if (isUploading) return;
+        isUploading = true;
         uploadBtn.disabled = true;
-        uploadBtn.innerHTML = '<span class="spinner"></span>上传中...';
+        uploadBtn.innerHTML = '<span class="spinner"></span>处理中...';
         status.textContent = '';
+        uploadContainer.classList.add('uploading');
 
         const formData = new FormData();
         formData.append('file', file);
@@ -282,21 +326,25 @@
 
         xhr.upload.onprogress = function (e) {
             if (e.lengthComputable) {
-                uploadPercent = Math.round((e.loaded / e.total) * 100);
+                uploadPercent = Math.min(Math.round((e.loaded / e.total) * 99), 99);
                 progressBar.style.width = uploadPercent + '%';
                 progressBar.textContent = uploadPercent + '%';
             }
         };
 
         xhr.onload = function () {
+            // 请求结束后，直接设置到100%
+            progressBar.style.width = '100%';
+            progressBar.textContent = '100%';
+
+            isUploading = false;
+            uploadContainer.classList.remove('uploading');
             if (xhr.status === 200) {
                 const blob = xhr.response;
                 const compressedSize = blob.size || originalSize;
                 const finalPercent = Math.round((1 - compressedSize / originalSize) * 100);
                 const gifNote = getGifNote(file.name);
 
-                progressBar.style.width = '100%';
-                progressBar.textContent = '100%';
                 status.textContent = '压缩完成';
 
                 const url = URL.createObjectURL(blob);
@@ -320,6 +368,8 @@
         };
 
         xhr.onerror = function () {
+            isUploading = false;
+            uploadContainer.classList.remove('uploading');
             status.textContent = '上传失败，请重试';
             uploadBtn.disabled = false;
             uploadBtn.innerHTML = '上传压缩';
@@ -331,15 +381,18 @@
 
     // 拖拽上传
     uploadContainer.addEventListener('dragover', (e) => {
+        if (isUploading) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
         uploadContainer.style.background = '#f0f4ff';
     });
     uploadContainer.addEventListener('dragleave', (e) => {
+        if (isUploading) return;
         e.preventDefault();
         uploadContainer.style.background = '#f9f9f9';
     });
     uploadContainer.addEventListener('drop', (e) => {
+        if (isUploading) return;
         e.preventDefault();
         const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
         if (files.length > 0) {
