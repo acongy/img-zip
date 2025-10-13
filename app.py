@@ -4,6 +4,9 @@ import io
 import subprocess
 import platform
 import os
+import zipfile
+import json
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
@@ -42,12 +45,23 @@ def compress_png_with_pngquant(input_bytes, quality_value=80):
 def compress_image(file_stream, quality=80, use_pngquant=True):
     """
     压缩图片：
+    - GIF: 不处理，直接返回原文件
     - JPEG: 有损压缩
     - PNG: 无损压缩 + 可选 pngquant 有损压缩
+    返回 (compressed_io, mime_type, original_size, compressed_size)
     """
+    # 计算原始大小
+    original_size = len(file_stream.read())
+    file_stream.seek(0)  # 重置流
     img = Image.open(file_stream)
 
-    if img.format == "PNG":
+    if img.format == "GIF":
+        # GIF 不处理，直接返回原文件
+        file_stream.seek(0)
+        compressed_output = io.BytesIO(file_stream.read())
+        compressed_output.seek(0)
+        return compressed_output, "image/gif", original_size, original_size
+    elif img.format == "PNG":
         img = img.convert("RGBA")
         output = io.BytesIO()
         img.save(output, format="PNG", optimize=True, compress_level=9)
@@ -57,14 +71,17 @@ def compress_image(file_stream, quality=80, use_pngquant=True):
         else:
             compressed_output = io.BytesIO(output_bytes)
         compressed_output.seek(0)
-        return compressed_output, "image/png"
+        compressed_size = len(compressed_output.read())
+        compressed_output.seek(0)
+        return compressed_output, "image/png", original_size, compressed_size
     else:
         # JPEG 压缩
         img = img.convert("RGB")
         output = io.BytesIO()
         img.save(output, format="JPEG", quality=quality, optimize=True)
         output.seek(0)
-        return output, "image/jpeg"
+        compressed_size = len(output.getvalue())
+        return output, "image/jpeg", original_size, compressed_size
 
 
 @app.route('/')
@@ -84,13 +101,86 @@ def compress():
     quality = int(request.form.get('quality', 80))
 
     try:
-        compressed_file, mime = compress_image(file.stream, quality)
+        compressed_file, mime, orig_size, comp_size = compress_image(file.stream, quality)
         return send_file(
             compressed_file,
             mimetype=mime,
             as_attachment=True,
-            download_name=f"{file.filename}"
+            download_name=f"{secure_filename(file.filename)}"
         )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/index2.html')
+def index2():
+    return render_template('index2.html')
+
+
+@app.route('/compress2', methods=['POST'])
+def compress2():
+    quality = int(request.form.get('quality', 80))
+    is_batch = request.form.get('is_batch', 'false').lower() == 'true'
+    files = request.files.getlist('file')
+
+    if not files or (not is_batch and len(files) != 1):
+        return jsonify({"error": "请上传文件参数 file (单个或批量)"}), 400
+
+    try:
+        if not is_batch or len(files) == 1:
+            # 单文件处理
+            file = files[0]
+            if file.filename == '':
+                return jsonify({"error": "文件名为空"}), 400
+
+            compressed_file, mime, orig_size, comp_size = compress_image(file.stream, quality)
+            response = send_file(
+                compressed_file,
+                mimetype=mime,
+                as_attachment=True,
+                download_name=f"{secure_filename(file.filename)}"
+            )
+            # 对于单文件，也设置头（可选）
+            response.headers['X-File-Sizes'] = json.dumps({file.filename: comp_size})
+            return response
+        else:
+            # 批量处理：创建ZIP
+            zip_buffer = io.BytesIO()
+            file_sizes = {}  # {original_filename: comp_size}
+            total_orig_size = 0
+            total_comp_size = 0
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                for file in files:
+                    if file.filename == '':
+                        continue
+                    # 读取文件内容到BytesIO
+                    file_bytes = file.read()
+                    file_stream = io.BytesIO(file_bytes)
+                    compressed_file, mime, orig_size, comp_size = compress_image(file_stream, quality)
+                    # 获取相对路径
+                    rel_path = getattr(file, 'webkitRelativePath', file.filename)
+                    if not rel_path:
+                        rel_path = secure_filename(file.filename)
+                    # 保持原后缀
+                    base_name, orig_ext = os.path.splitext(rel_path)
+                    comp_filename = base_name + orig_ext
+                    zip_file.writestr(comp_filename, compressed_file.getvalue())
+                    file_sizes[file.filename] = comp_size  # 用原文件名作为key，前端匹配
+                    total_orig_size += orig_size
+                    total_comp_size += comp_size
+
+            zip_buffer.seek(0)
+            response = send_file(
+                zip_buffer,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name='compressed_images.zip'
+            )
+            # 设置响应头返回大小信息
+            response.headers['X-Original-Total'] = str(total_orig_size)
+            response.headers['X-Compressed-Total'] = str(total_comp_size)
+            response.headers['X-File-Sizes'] = json.dumps(file_sizes)
+            return response
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
