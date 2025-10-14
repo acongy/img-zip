@@ -8,6 +8,7 @@ import zipfile
 import json
 from werkzeug.utils import secure_filename
 import webbrowser
+import threading
 
 app = Flask(__name__)
 
@@ -187,5 +188,16 @@ def compress2():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
-    webbrowser.open('http://127.0.0.1:5000')
+    # 在后台线程启动 Flask 服务器（避免阻塞主线程）
+    threading.Thread(
+        target=app.run,
+        kwargs={
+            'host': '0.0.0.0',
+            'port': 5000,
+            'debug': True,  # 保持 debug=True，但见下方注意
+            'use_reloader': False  # 禁用 reloader，避免 debug 模式下线程冲突
+        }
+    ).start()
+
+    # 主线程立即打开浏览器
+    webbrowser.open('http://127.0.0.1:5000')  # 或你的首页路由，如 '/home'
