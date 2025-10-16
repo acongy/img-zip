@@ -46,45 +46,53 @@ def compress_png_with_pngquant(input_bytes, quality_value=80):
 
 def compress_image(file_stream, quality=80, use_pngquant=True):
     """
-    压缩图片：
-    - GIF: 不处理，直接返回原文件
+    压缩图片（优化版）：
+    - GIF: 不处理
     - JPEG: 有损压缩
-    - PNG: 无损压缩 + 可选 pngquant 有损压缩
+    - PNG: 优先保留 Indexed 模式，无损优化；仅在 pngquant 时转为 RGBA
     返回 (compressed_io, mime_type, original_size, compressed_size)
     """
-    # 计算原始大小
     original_size = len(file_stream.read())
-    file_stream.seek(0)  # 重置流
+    file_stream.seek(0)
     img = Image.open(file_stream)
 
     if img.format == "GIF":
-        # GIF 不处理，直接返回原文件
         file_stream.seek(0)
         compressed_output = io.BytesIO(file_stream.read())
         compressed_output.seek(0)
         return compressed_output, "image/gif", original_size, original_size
     elif img.format == "PNG":
-        img = img.convert("RGBA")
+        # 先尝试无损优化，保留原模式
         output = io.BytesIO()
-        img.save(output, format="PNG", optimize=True, compress_level=9)
-        output_bytes = output.getvalue()
+        save_kwargs = {"format": "PNG", "optimize": True, "compress_level": 9}
+
         if use_pngquant:
-            compressed_output = compress_png_with_pngquant(output_bytes, quality)
+            # pngquant 需要 RGBA
+            if img.mode != "RGBA":
+                img = img.convert("RGBA")
+            img.save(output, **save_kwargs)
+            output_bytes = output.getvalue()
+            compressed_output = compress_png_with_pngquant(output_bytes, quality)  # 假设此函数存在
         else:
-            compressed_output = io.BytesIO(output_bytes)
+            # 无 pngquant 时，保留原模式（Indexed 优先）
+            if img.mode == "P" and img.palette is not None:
+                # 确保 Indexed 模式下有调色板
+                save_kwargs["palette"] = img.palette
+            img.save(output, **save_kwargs)
+            compressed_output = output
+
         compressed_output.seek(0)
         compressed_size = len(compressed_output.read())
         compressed_output.seek(0)
         return compressed_output, "image/png", original_size, compressed_size
     else:
-        # JPEG 压缩
+        # JPEG 压缩（不变）
         img = img.convert("RGB")
         output = io.BytesIO()
         img.save(output, format="JPEG", quality=quality, optimize=True)
         output.seek(0)
         compressed_size = len(output.getvalue())
         return output, "image/jpeg", original_size, compressed_size
-
 
 @app.route('/')
 def index():
