@@ -76,6 +76,7 @@ def after_request(response):
 def get_pngquant_path():
     """根据系统返回 pngquant 可执行文件路径"""
     system = platform.system().lower()
+    print("system:{}", system)
     if system.startswith("win"):  # Windows
         return os.path.join("pngquant-win", "pngquant.exe")
     else:  # Linux
@@ -131,7 +132,7 @@ def compress_image(file_stream, quality=80, use_pngquant=True, client_ip=None, f
         return compressed_output, "image/gif", original_size, original_size
     elif img.format == "PNG":
         logger.info(
-            f"检测到 PNG (模式: {img.mode})，原始大小: {round(original_size / 1024 / 1024,2)} MB，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
+            f"检测到 PNG (模式: {img.mode})，原始大小: {original_size} 字节，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
         # 先尝试无损优化，保留原模式
         output = io.BytesIO()
         save_kwargs = {"format": "PNG", "optimize": True, "compress_level": 9}
@@ -159,19 +160,19 @@ def compress_image(file_stream, quality=80, use_pngquant=True, client_ip=None, f
         compressed_size = len(compressed_output.read())
         compressed_output.seek(0)
         logger.info(
-            f"PNG 压缩完成: 原始 {round(original_size / 1024 / 1024,2)} -> 压缩 {round(compressed_size / 1024 / 1024, 2)} MB (比率: {compressed_size / original_size:.2%})，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
+            f"PNG 压缩完成: 原始 {original_size} -> 压缩 {compressed_size} 字节 (比率: {compressed_size / original_size:.2%})，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
         return compressed_output, "image/png", original_size, compressed_size
     else:
         # JPEG 压缩（不变）
         logger.info(
-            f"检测到 JPEG，原始大小: {round(original_size / 1024 / 1024,2)} MB，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
+            f"检测到 JPEG，原始大小: {original_size} 字节，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
         img = img.convert("RGB")
         output = io.BytesIO()
         img.save(output, format="JPEG", quality=quality, optimize=True)
         output.seek(0)
         compressed_size = len(output.getvalue())
         logger.info(
-            f"JPEG 压缩完成: 原始 {original_size} -> 压缩 {round(compressed_size / 1024 / 1024, 2)} MB (比率: {compressed_size / original_size:.2%})，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
+            f"JPEG 压缩完成: 原始 {original_size} -> 压缩 {compressed_size} 字节 (比率: {compressed_size / original_size:.2%})，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
         return output, "image/jpeg", original_size, compressed_size
 
 
@@ -208,8 +209,7 @@ def compress():
     try:
         compressed_file, mime, orig_size, comp_size = compress_image(file.stream, quality, client_ip=client_ip,
                                                                      filename=file.filename)
-        logger.info(
-            f"单个文件压缩成功: {file.filename} ({round(orig_size / 1024 / 1024, 2)} -> {round(comp_size / 1024 / 1024, 2)} MB)，客户端IP: {client_ip}")
+        logger.info(f"单个文件压缩成功: {file.filename} ({orig_size} -> {comp_size} 字节)，客户端IP: {client_ip}")
         return send_file(
             compressed_file,
             mimetype=mime,
@@ -253,7 +253,7 @@ def compress2():
             # 对于单文件，也设置头（可选）
             response.headers['X-File-Sizes'] = json.dumps({file.filename: comp_size})
             logger.info(
-                f"批量单个文件压缩成功: {file.filename} ({round(orig_size / 1024 / 1024, 2)} -> {round(comp_size / 1024 / 1024, 2)} MB)，客户端IP: {client_ip}")
+                f"批量单个文件压缩成功: {file.filename} ({orig_size} -> {comp_size} 字节)，客户端IP: {client_ip}")
             return response
         else:
             # 批量处理：创建ZIP
@@ -285,7 +285,7 @@ def compress2():
                     total_orig_size += orig_size
                     total_comp_size += comp_size
                     logger.info(
-                        f"批量文件处理: {file.filename} ({round(orig_size / 1024 / 1024, 2)} -> {round(comp_size / 1024 / 1024, 2)} MB)，客户端IP: {client_ip}")
+                        f"批量文件处理: {file.filename} ({orig_size} -> {comp_size} 字节)，客户端IP: {client_ip}")
 
             zip_buffer.seek(0)
             response = send_file(
@@ -299,7 +299,7 @@ def compress2():
             response.headers['X-Compressed-Total'] = str(total_comp_size)
             response.headers['X-File-Sizes'] = json.dumps(file_sizes)
             logger.info(
-                f"批量压缩完成: 总原始 {total_orig_size} -> 总压缩 {round(total_comp_size / 1024 / 1024, 2)} MB (比率: {total_comp_size / total_orig_size:.2%})，客户端IP: {client_ip}")
+                f"批量压缩完成: 总原始 {total_orig_size} -> 总压缩 {total_comp_size} 字节 (比率: {total_comp_size / total_orig_size:.2%})，客户端IP: {client_ip}")
             return response
     except Exception as e:
         logger.error(f"批量/单个压缩错误: {str(e)}，客户端IP: {client_ip}")
