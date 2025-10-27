@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file, jsonify, g, current_app
+from flask import Flask, request, send_file, render_template, jsonify, g, current_app
 from flask_mail import Mail
 from PIL import Image
 import io
@@ -8,13 +8,12 @@ import os
 from werkzeug.utils import secure_filename
 import threading
 import logging
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler, SMTPHandler
 import uuid
 import time
 from functools import wraps
 from datetime import datetime, timedelta
 import jwt
-from flask_mail import Message
 
 
 # 自定义日志过滤器：注入请求ID（处理非请求上下文）
@@ -38,13 +37,17 @@ handler_console.setFormatter(logging.Formatter(
 ))
 handler_console.addFilter(RequestIDFilter())
 
+# 创建 logs 目录（如果不存在）
+os.makedirs('logs', exist_ok=True)
+
 handler_file = TimedRotatingFileHandler(
-    'app.log',
+    'logs/app.log',
     when='midnight',  # 每天午夜轮转
     interval=1,  # 间隔1天
     backupCount=30,  # 保留30个备份文件
     encoding='utf-8'
 )
+
 handler_file.setFormatter(logging.Formatter(
     '%(asctime)s - %(levelname)s - [REQ-%(request_id)s] - %(message)s'
 ))
@@ -140,6 +143,7 @@ def send_alert_email(subject, body):
                 </div>
                 </body>
                 </html>"""
+    from flask_mail import Message
     msg = Message(subject, recipients=app.config['ADMINS'], sender=app.config['MAIL_USERNAME'])
     msg.html = html_template % (subject, body)
     try:
@@ -295,12 +299,12 @@ def compress_image(file_stream, quality=80, use_pngquant=True, client_ip=None, f
             orig_mb = round(original_size / (1024 * 1024), 2)
             comp_mb = round(compressed_size / (1024 * 1024), 2)
             body = f"""文件: {filename if filename else '未知'}
-            用户: {current_user}
-            IP: {client_ip if client_ip else '未知'}
-            原始大小: {orig_mb} MB
-            压缩后大小: {comp_mb} MB
-            比率: {compressed_size / original_size:.2%}
-            时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+用户: {current_user}
+IP: {client_ip if client_ip else '未知'}
+原始大小: {orig_mb} MB
+压缩后大小: {comp_mb} MB
+比率: {compressed_size / original_size:.2%}
+时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
             send_alert_email(subject, body)
 
         return compressed_output, "image/png", original_size, compressed_size
@@ -341,12 +345,12 @@ def compress_image(file_stream, quality=80, use_pngquant=True, client_ip=None, f
             orig_mb = round(original_size / (1024 * 1024), 2)
             comp_mb = round(compressed_size_temp / (1024 * 1024), 2)
             body = f"""文件: {filename if filename else '未知'}
-            用户: {current_user}
-            IP: {client_ip if client_ip else '未知'}
-            原始大小: {orig_mb} MB
-            压缩后大小: {comp_mb} MB
-            比率: {compressed_size_temp / original_size:.2%}
-            时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+用户: {current_user}
+IP: {client_ip if client_ip else '未知'}
+原始大小: {orig_mb} MB
+压缩后大小: {comp_mb} MB
+比率: {compressed_size_temp / original_size:.2%}
+时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
             send_alert_email(subject, body)
             file_stream.seek(0)
             compressed_output = io.BytesIO(file_stream.read())
@@ -422,16 +426,16 @@ def compress():
         logger.error(f"单个文件压缩错误 {file.filename}: {str(e)}，用户: {g.current_user}，客户端IP: {client_ip}")
         subject = "图片压缩错误"
         body = f"""文件: {file.filename}
-        错误: {str(e)}
-        用户: {g.current_user}
-        IP: {client_ip}
-        时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+错误: {str(e)}
+用户: {g.current_user}
+IP: {client_ip}
+时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
         send_alert_email(subject, body)
         return jsonify({"msg": str(e), 'code': 500}), 500
 
 
 if __name__ == '__main__':
-    logger.info("启动中...")
+    logger.info("启动 Flask 应用")
     # 在后台线程启动 Flask 服务器（避免阻塞主线程）
     threading.Thread(
         target=app.run,

@@ -36,13 +36,17 @@ handler_console.setFormatter(logging.Formatter(
 ))
 handler_console.addFilter(RequestIDFilter())
 
+# 创建 logs 目录（如果不存在）
+os.makedirs('logs', exist_ok=True)
+
 handler_file = TimedRotatingFileHandler(
-    'app.log',
+    'logs/app.log',
     when='midnight',  # 每天午夜轮转
     interval=1,  # 间隔1天
     backupCount=30,  # 保留30个备份文件
     encoding='utf-8'
 )
+
 handler_file.setFormatter(logging.Formatter(
     '%(asctime)s - %(levelname)s - [REQ-%(request_id)s] - %(message)s'
 ))
