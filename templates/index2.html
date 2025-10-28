@@ -469,7 +469,7 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = isBatch ? 'compressed_images.zip' : filesToUpload[0].name;
+                a.download = xhr.getResponseHeader('X-Download-Name')
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);

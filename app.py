@@ -37,10 +37,10 @@ handler_console.setFormatter(logging.Formatter(
 handler_console.addFilter(RequestIDFilter())
 
 # 创建 logs 目录（如果不存在）
-os.makedirs('logs', exist_ok=True)
+os.makedirs('logs2', exist_ok=True)
 
 handler_file = TimedRotatingFileHandler(
-    'logs/app.log',
+    'logs2/app.log',
     when='midnight',  # 每天午夜轮转
     interval=1,  # 间隔1天
     backupCount=30,  # 保留30个备份文件
@@ -135,7 +135,7 @@ def compress_image(file_stream, quality=80, use_pngquant=True, client_ip=None, f
         return compressed_output, "image/gif", original_size, original_size
     elif img.format == "PNG":
         logger.info(
-            f"检测到 PNG (模式: {img.mode})，原始大小: {round(original_size / 1024 / 1024,2)} MB，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
+            f"检测到 PNG (模式: {img.mode})，原始大小: {round(original_size / 1024 / 1024, 2)} MB，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
         # 先尝试无损优化，保留原模式
         output = io.BytesIO()
         save_kwargs = {"format": "PNG", "optimize": True, "compress_level": 9}
@@ -163,12 +163,12 @@ def compress_image(file_stream, quality=80, use_pngquant=True, client_ip=None, f
         compressed_size = len(compressed_output.read())
         compressed_output.seek(0)
         logger.info(
-            f"PNG 压缩完成: 原始 {round(original_size / 1024 / 1024,2)} -> 压缩 {round(compressed_size / 1024 / 1024, 2)} MB (比率: {compressed_size / original_size:.2%})，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
+            f"PNG 压缩完成: 原始 {round(original_size / 1024 / 1024, 2)} -> 压缩 {round(compressed_size / 1024 / 1024, 2)} MB (比率: {compressed_size / original_size:.2%})，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
         return compressed_output, "image/png", original_size, compressed_size
     else:
         # JPEG 压缩（不变）
         logger.info(
-            f"检测到 JPEG，原始大小: {round(original_size / 1024 / 1024,2)} MB，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
+            f"检测到 JPEG，原始大小: {round(original_size / 1024 / 1024, 2)} MB，文件: {filename if filename else '未知'}，客户端IP: {client_ip if client_ip else '未知'}")
         img = img.convert("RGB")
         output = io.BytesIO()
         img.save(output, format="JPEG", quality=quality, optimize=True)
@@ -262,6 +262,17 @@ def compress2():
         else:
             # 批量处理：创建ZIP
             logger.info(f"开始批量压缩 {len(files)} 个文件，质量: {quality}，客户端IP: {client_ip}")
+
+            # 动态生成ZIP文件名：基于第一个文件的目录名（如果有）
+            zip_name = 'compressed_images.zip'  # 默认
+            if files and files[0].filename:  # 确保有文件
+                first_rel_path = getattr(files[0], 'webkitRelativePath', files[0].filename)
+                if '/' in first_rel_path:
+                    folder_dir = os.path.dirname(first_rel_path)
+                    if folder_dir and folder_dir != '.':  # 忽略当前目录
+                        zip_name = f"{secure_filename(folder_dir)}.zip"
+                        logger.info(f"使用目录名生成ZIP文件名: {zip_name}，客户端IP: {client_ip}")
+
             zip_buffer = io.BytesIO()
             file_sizes = {}  # {original_filename: comp_size}
             total_orig_size = 0
@@ -296,8 +307,9 @@ def compress2():
                 zip_buffer,
                 mimetype='application/zip',
                 as_attachment=True,
-                download_name='compressed_images.zip'
+                download_name=zip_name
             )
+            response.headers['X-Download-Name'] = zip_name
             # 设置响应头返回大小信息
             response.headers['X-Original-Total'] = str(total_orig_size)
             response.headers['X-Compressed-Total'] = str(total_comp_size)
@@ -324,5 +336,5 @@ if __name__ == '__main__':
     ).start()
 
     # 主线程立即打开浏览器
-    webbrowser.open('http://127.0.0.1:5000')
-    logger.info("浏览器已打开到 http://127.0.0.1:5000")
+    # webbrowser.open('http://127.0.0.1:5000')
+    # logger.info("浏览器已打开到 http://127.0.0.1:5000")
